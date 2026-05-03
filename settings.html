@@ -87,14 +87,24 @@ function renderMaps() {
   const c = document.getElementById('maps');
   c.innerHTML = '';
   const entries = Object.entries(cfg.custom_models || {});
-  entries.forEach(([k, v], i) => {
+  entries.forEach(([k, v]) => {
     const r = document.createElement('div'); r.className = 'model-row';
-    r.innerHTML = `<input class="mk" value="${k}" placeholder="gpt-5.5"><span class="arrow">→</span><input class="mv" value="${v}" placeholder="deepseek-v4-pro">`;
+    const ik = document.createElement('input'); ik.className = 'mk'; ik.value = k; ik.placeholder = 'gpt-5.5';
+    const ar = document.createElement('span'); ar.className = 'arrow'; ar.textContent = '\u2192';
+    const iv = document.createElement('input'); iv.className = 'mv'; iv.value = v; iv.placeholder = 'deepseek-v4-pro';
+    r.append(ik, ar, iv);
     c.appendChild(r);
   });
-  if (!entries.length) {
-    document.getElementById('maps').innerHTML = '<div class="model-row"><input class="mk" placeholder="gpt-5.5"><span class="arrow">→</span><input class="mv" placeholder="deepseek-v4-pro"></div>';
-  }
+  if (!entries.length) addMapRow();
+}
+
+function addMapRow() {
+  const r = document.createElement('div'); r.className = 'model-row';
+  const ik = document.createElement('input'); ik.className = 'mk'; ik.placeholder = 'gpt-5.5';
+  const ar = document.createElement('span'); ar.className = 'arrow'; ar.textContent = '\u2192';
+  const iv = document.createElement('input'); iv.className = 'mv'; iv.placeholder = 'deepseek-v4-pro';
+  r.append(ik, ar, iv);
+  document.getElementById('maps').appendChild(r);
 }
 
 async function save() {
@@ -129,18 +139,19 @@ function showToast() {
 Promise.all([window.api.getConfig(), window.api.getProviders()]).then(([c, p]) => {
   cfg = c; provs = p;
   const sel = document.getElementById('prov');
-  sel.innerHTML = Object.entries(p).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('');
+  sel.innerHTML = '';
+  Object.entries(p).forEach(([k, v]) => {
+    const opt = document.createElement('option');
+    opt.value = k; opt.textContent = v.name;
+    sel.appendChild(opt);
+  });
   render();
 });
 
 document.getElementById('prov').addEventListener('change', toggleCustom);
 document.getElementById('save').addEventListener('click', save);
 document.getElementById('cancel').addEventListener('click', () => window.close());
-document.getElementById('addMap').addEventListener('click', () => {
-  const d = document.createElement('div'); d.className = 'model-row';
-  d.innerHTML = '<input class="mk" placeholder="codex-model"><span class="arrow">→</span><input class="mv" placeholder="upstream-model">';
-  document.getElementById('maps').appendChild(d);
-});
+document.getElementById('addMap').addEventListener('click', addMapRow);
 </script>
 </body>
 </html>

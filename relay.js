@@ -205,17 +205,19 @@ function start(port, upstream, apiKey, modelMap) {
     try {
       if (req.method === 'GET' && req.url === '/v1/models') {
         const r = await reqUp('GET', '/models', {}, null, apiKey);
-        let body = r.body.toString();
-        for (const [up, down] of Object.entries(reverseMap))
-          body = body.replace(new RegExp(`"${up.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`, 'g'), `"${down}"`);
         try {
-          const j = JSON.parse(body);
-          for (const [cm] of Object.entries(modelMap))
-            if (!j.data.find(m => m.id === cm)) j.data.push({ id: cm, object: 'model', created: 1, owned_by: 'opencode' });
-          body = JSON.stringify(j);
-        } catch {}
-        res.writeHead(r.status, { 'content-type': 'application/json' });
-        res.end(body);
+          const j = JSON.parse(r.body.toString());
+          if (j.data) {
+            j.data = j.data.map(m => ({ ...m, id: mapDown(m.id) }));
+            for (const [cm] of Object.entries(modelMap))
+              if (!j.data.find(m => m.id === cm)) j.data.push({ id: cm, object: 'model', created: 1, owned_by: 'opencode' });
+          }
+          res.writeHead(r.status, { 'content-type': 'application/json' });
+          res.end(JSON.stringify(j));
+        } catch {
+          res.writeHead(r.status, { 'content-type': 'application/json' });
+          res.end(r.body);
+        }
         return;
       }
       if (req.method === 'POST' && req.url === '/v1/responses') {
