@@ -1,23 +1,16 @@
-const { app, Menu, Tray, BrowserWindow, ipcMain, nativeImage, shell, dialog } = require('electron');
+const { app, Menu, Tray, BrowserWindow, ipcMain, nativeImage, shell } = require('electron');
 const { start: startRelay } = require('./relay');
 const path = require('path');
 const fs = require('fs');
 const { exec } = require('child_process');
 
-// ── paths ──
-const cfgDir = app.getPath('userData');
-const cfgPath = path.join(cfgDir, 'config.json');
-const provPath = path.join(__dirname, 'providers.json');
-const codexCfg = path.join(require('os').homedir(), '.codex', 'config.toml');
-const isPacked = app.isPackaged;
-
-// ── state ──
 let tray = null;
 let relayServer = null;
 let providers = {};
 let config = {};
+let cfgDir, cfgPath;
+let codexCfg;
 
-// ── helpers ──
 function loadConfig() {
   const def = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.default.json'), 'utf8'));
   if (fs.existsSync(cfgPath)) {
@@ -34,17 +27,16 @@ function saveConfig() {
 }
 
 function loadProviders() {
-  providers = JSON.parse(fs.readFileSync(provPath, 'utf8'));
+  providers = JSON.parse(fs.readFileSync(path.join(__dirname, 'providers.json'), 'utf8'));
 }
 
 function getRelayProv() {
   if (config.provider === 'custom') {
-    return { upstream: config.custom_upstream, models: config.custom_models };
+    return { upstream: config.custom_upstream || '', models: config.custom_models || {} };
   }
   return providers[config.provider] || providers['opencode-go'];
 }
 
-// ── codex config.toml ──
 function getCodexMode() {
   if (!fs.existsSync(codexCfg)) return 'openai';
   const content = fs.readFileSync(codexCfg, 'utf8');
@@ -78,16 +70,13 @@ function restartCodex() {
   });
 }
 
-// ── relay ──
 async function startRelayProcess() {
   if (relayServer) return;
   const prov = getRelayProv();
-  if (!config.api_key) {
-    if (BrowserWindow.getAllWindows().length === 0) openSettings();
-    return;
-  }
+  if (!config.api_key) return;
+  if (!prov.upstream) return;
   try {
-    relayServer = await startRelay(config.port, prov.upstream, config.api_key, prov.models);
+    relayServer = await startRelay(config.port, prov.upstream, config.api_key, prov.models || {});
   } catch (e) {
     console.error('Relay start failed:', e.message);
   }
@@ -97,23 +86,22 @@ async function stopRelayProcess() {
   if (relayServer) { relayServer.close(); relayServer = null; }
 }
 
-// ── desktop shortcut ──
 function ensureShortcut() {
   if (config.shortcut_created) return;
-  const desktop = path.join(require('os').homedir(), 'Desktop');
-  const shortcut = path.join(desktop, 'Codex Relay.lnk');
-  if (fs.existsSync(shortcut)) { config.shortcut_created = true; saveConfig(); return; }
   try {
+    const desktop = path.join(require('os').homedir(), 'Desktop');
+    const shortcut = path.join(desktop, 'Codex Relay.lnk');
+    if (fs.existsSync(shortcut)) { config.shortcut_created = true; saveConfig(); return; }
     const exe = process.execPath;
     const ico = path.join(__dirname, 'build', 'icon.ico');
+    if (!fs.existsSync(ico)) return;
     const ps = `$ws=(New-Object -COM WScript.Shell).CreateShortcut('${shortcut}');$ws.TargetPath='${exe}';$ws.WorkingDirectory='${path.dirname(exe)}';$ws.IconLocation='${ico}';$ws.Save()`;
-    exec(`powershell -Command "${ps}"`, { stdio: 'ignore' });
-    config.shortcut_created = true;
-    saveConfig();
+    exec(`powershell -Command "${ps}"`, { stdio: 'ignore' }, (err) => {
+      if (!err) { config.shortcut_created = true; saveConfig(); }
+    });
   } catch {}
 }
 
-// ── settings window ──
 function openSettings() {
   const win = BrowserWindow.getAllWindows().find(w => w.title === 'settings');
   if (win) { win.focus(); return; }
@@ -125,7 +113,6 @@ function openSettings() {
   sw.loadFile('settings.html');
 }
 
-// ── tray icon ──
 function makeIcon(color) {
   const c = { green: '#00cc44', blue: '#2080ff', gray: '#888888' }[color];
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><circle cx="8" cy="8" r="7" fill="${c}"/></svg>`;
@@ -133,10 +120,7 @@ function makeIcon(color) {
 }
 
 function buildMenu() {
-  const mode = getCodexMode();
   const running = !!relayServer;
-  const prov = providers[config.provider];
-
   const provMenu = Object.entries(providers).map(([key, p]) => ({
     label: (config.provider === key ? '✓ ' : '   ') + p.name,
     type: 'radio', checked: config.provider === key,
@@ -152,7 +136,7 @@ function buildMenu() {
     { type: 'separator' },
     { label: '设置...', click: () => openSettings() },
     { type: 'separator' },
-    { label: '退出', click: () => { tray.destroy(); stopRelayProcess().then(() => app.quit()); } },
+    { label: '退出', click: () => { tray.destroy(); stopRelayProcess().catch(() => {}).finally(() => app.quit()); } },
   ]);
 }
 
@@ -167,32 +151,33 @@ function updateIcon() {
   tray.setContextMenu(buildMenu());
 }
 
-// ── IPC ──
 function setupIPC() {
   ipcMain.handle('get-config', () => config);
   ipcMain.handle('get-providers', () => providers);
-  ipcMain.handle('save-config', (_, newCfg) => {
+  ipcMain.handle('save-config', async (_, newCfg) => {
     config = { ...config, ...newCfg }; saveConfig();
-    stopRelayProcess().then(async () => {
-      if (config.autostart_relay) await startRelayProcess();
-      updateIcon();
-    });
+    if (!config.autostart_relay) await stopRelayProcess();
+    else await startRelayProcess();
+    app.setLoginItemSettings({ openAtLogin: config.autostart, path: process.execPath });
+    updateIcon();
   });
 }
 
-// ── app lifecycle ──
 app.whenReady().then(async () => {
+  cfgDir = app.getPath('userData');
+  cfgPath = path.join(cfgDir, 'config.json');
+  codexCfg = path.join(require('os').homedir(), '.codex', 'config.toml');
+
   loadConfig();
   loadProviders();
   setupIPC();
 
-  app.setLoginItemSettings({ openAtLogin: config.autostart });
+  app.setLoginItemSettings({ openAtLogin: !!config.autostart, path: process.execPath });
+  ensureShortcut();
 
   tray = new Tray(makeIcon('blue'));
   updateIcon();
   tray.setToolTip('Codex Relay');
-
-  if (!isPacked || !config.shortcut_created) ensureShortcut();
 
   if (config.autostart_relay && config.api_key) await startRelayProcess();
   updateIcon();
@@ -201,5 +186,5 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {});
 
 app.on('before-quit', async () => {
-  await stopRelayProcess();
+  await stopRelayProcess().catch(() => {});
 });

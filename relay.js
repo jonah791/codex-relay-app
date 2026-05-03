@@ -3,9 +3,12 @@ const https = require('https');
 const { randomUUID } = require('crypto');
 
 function start(port, upstream, apiKey, modelMap) {
-  const reverseMap = Object.fromEntries(
-    Object.entries(modelMap).map(([k, v]) => [v, k])
-  );
+  if (!upstream || !upstream.startsWith('http')) throw new Error('Invalid upstream URL');
+
+  const reverseMap = {};
+  for (const [k, v] of Object.entries(modelMap)) {
+    if (!reverseMap[v]) reverseMap[v] = k;
+  }
 
   const upUrl = new URL(upstream);
   const upTransport = upUrl.protocol === 'https:' ? https : http;
@@ -34,10 +37,14 @@ function start(port, upstream, apiKey, modelMap) {
         const chunks = [];
         res.on('data', c => chunks.push(c));
         res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
+        res.on('error', reject);
       });
       r.on('error', reject);
-      if (body) r.write(typeof body === 'string' ? body : JSON.stringify(body));
-      r.end();
+      if (body) {
+        const payload = typeof body === 'string' ? body : JSON.stringify(body);
+        if (!r.write(payload)) r.once('drain', () => r.end());
+        else r.end();
+      } else r.end();
     });
   }
 
@@ -45,8 +52,7 @@ function start(port, upstream, apiKey, modelMap) {
     const messages = [];
     const system = req.instructions || req.system;
     if (system) messages.push({ role: 'system', content: system });
-    if (req.input == null) { /* no input */ }
-    else if (typeof req.input === 'string') {
+    if (typeof req.input === 'string') {
       messages.push({ role: 'user', content: req.input });
     } else if (Array.isArray(req.input)) {
       let i = 0;
@@ -92,19 +98,43 @@ function start(port, upstream, apiKey, modelMap) {
 
   function chatToResponse(id, model, cr) {
     const choice = (cr.choices || [])[0] || { message: { role: 'assistant', content: '' } };
+    const msg = choice.message || {};
     const usage = cr.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+    const output = [];
+
+    // text content
+    output.push({ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: msg.content || '' }] });
+
+    // tool calls
+    if (msg.tool_calls && msg.tool_calls.length) {
+      for (const tc of msg.tool_calls) {
+        output.push({
+          type: 'function_call', id: tc.id, call_id: tc.id,
+          name: tc.function?.name || '', arguments: tc.function?.arguments || '{}',
+          status: 'completed',
+        });
+      }
+    }
+
     return {
       id, object: 'response', model: mapDown(model),
-      output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: choice.message.content || '' }] }],
+      output,
       usage: { input_tokens: usage.prompt_tokens || 0, output_tokens: usage.completion_tokens || 0, total_tokens: usage.total_tokens || 0 },
     };
   }
 
   function sseEncoder() {
     let rid, oi = 0, ci = 0, started = false, tcAcc = new Map();
+    let buf = ''; // accumulate partial lines across chunks
+
     function line(ev, data) { return (ev ? `event: ${ev}\r\n` : '') + `data: ${JSON.stringify(data)}\r\n\r\n`; }
+
     function* process(chunkText) {
-      for (const ln of chunkText.split('\n')) {
+      buf += chunkText;
+      const lines = buf.split('\n');
+      buf = lines.pop(); // keep incomplete last line in buffer
+
+      for (const ln of lines) {
         if (!ln.startsWith('data: ')) continue;
         const ds = ln.substring(6).trim();
         if (ds === '[DONE]') {
@@ -161,8 +191,12 @@ function start(port, upstream, apiKey, modelMap) {
       path: url.pathname + path, method,
       headers: { 'Content-Type': 'application/json', ...(authKey ? { Authorization: `Bearer ${authKey}` } : {}), ...headers },
     };
-    const r = t.request(opts, (res) => { res.on('data', onChunk); res.on('end', onEnd); res.on('error', onError); });
-    r.on('error', onError);
+    let ended = false;
+    const r = t.request(opts, (res) => {
+      res.on('data', onChunk);
+      res.on('end', () => { if (!ended) { ended = true; onEnd(); } });
+    });
+    r.on('error', (e) => { if (!ended) { ended = true; onError(e); } });
     r.write(JSON.stringify(body));
     r.end();
   }
@@ -196,8 +230,8 @@ function start(port, upstream, apiKey, modelMap) {
               const enc = sseEncoder();
               streamUp('POST', '/chat/completions', { Accept: 'text/event-stream' }, cr, apiKey,
                 d => { for (const l of enc.process(d.toString())) res.write(l); },
-                () => res.end(),
-                e => { res.write(`data: ${JSON.stringify({ type: 'error', message: e.message })}\n\n`); res.end(); }
+                () => { if (!res.writableEnded) res.end(); },
+                e => { if (!res.writableEnded) { res.write(`data: ${JSON.stringify({ type: 'error', message: e.message })}\n\n`); res.end(); } }
               );
             } else {
               const r = await reqUp('POST', '/chat/completions', {}, cr, apiKey);
@@ -219,8 +253,9 @@ function start(port, upstream, apiKey, modelMap) {
     } catch (e) { res.writeHead(502); res.end(JSON.stringify({ error: e.message })); }
   });
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     server.listen(port, '127.0.0.1', () => resolve(server));
+    server.on('error', reject);
   });
 }
 
