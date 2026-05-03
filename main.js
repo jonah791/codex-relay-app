@@ -2,7 +2,7 @@ const { app, Menu, Tray, BrowserWindow, ipcMain, nativeImage, shell } = require(
 const { start: startRelay } = require('./relay');
 const path = require('path');
 const fs = require('fs');
-const { exec } = require('child_process');
+const { execSync } = require('child_process');
 
 let tray = null;
 let relayServer = null;
@@ -63,18 +63,26 @@ function setCodexMode(mode) {
 }
 
 function restartCodex() {
-  exec('taskkill /f /im Codex.exe', () => {
-    exec('taskkill /f /im codex.exe', () => {
-      shell.openPath('shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App');
-    });
-  });
+  try { execSync('taskkill /f /im Codex.exe', { stdio: 'ignore' }); } catch {}
+  try { execSync('taskkill /f /im codex.exe', { stdio: 'ignore' }); } catch {}
+  shell.openPath('shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App');
 }
 
 async function startRelayProcess() {
   if (relayServer) return;
   const prov = getRelayProv();
-  if (!config.api_key) return;
-  if (!prov.upstream) return;
+  if (!config.api_key) {
+    tray && tray.showBalloon
+      ? tray.showBalloon({ title: 'Codex Relay', content: '请在设置中填写 API Key', iconType: 'warning' })
+      : console.warn('No API key configured');
+    return;
+  }
+  if (!prov.upstream) {
+    tray && tray.showBalloon
+      ? tray.showBalloon({ title: 'Codex Relay', content: '请选择有效的供应商', iconType: 'warning' })
+      : console.warn('No valid provider upstream');
+    return;
+  }
   try {
     relayServer = await startRelay(config.port, prov.upstream, config.api_key, prov.models || {});
   } catch (e) {
@@ -92,19 +100,23 @@ function ensureShortcut() {
     const desktop = path.join(require('os').homedir(), 'Desktop');
     const shortcut = path.join(desktop, 'Codex Relay.lnk');
     if (fs.existsSync(shortcut)) { config.shortcut_created = true; saveConfig(); return; }
-    const exe = process.execPath;
-    const ico = path.join(__dirname, 'build', 'icon.ico');
-    if (!fs.existsSync(ico)) return;
-    const ps = `$ws=(New-Object -COM WScript.Shell).CreateShortcut('${shortcut}');$ws.TargetPath='${exe}';$ws.WorkingDirectory='${path.dirname(exe)}';$ws.IconLocation='${ico}';$ws.Save()`;
-    exec(`powershell -Command "${ps}"`, { stdio: 'ignore' }, (err) => {
-      if (!err) { config.shortcut_created = true; saveConfig(); }
+    // Use shell.writeShortcutLink (Electron-native, no COM)
+    const ok = shell.writeShortcutLink(shortcut, {
+      target: process.execPath,
+      workingDirectory: path.dirname(process.execPath),
+      icon: path.join(__dirname, 'build', 'icon.ico'),
+      iconIndex: 0,
     });
+    if (ok || fs.existsSync(shortcut)) {
+      config.shortcut_created = true;
+      saveConfig();
+    }
   } catch {}
 }
 
 function openSettings() {
-  const win = BrowserWindow.getAllWindows().find(w => w.title === 'settings');
-  if (win) { win.focus(); return; }
+  const existing = BrowserWindow.getAllWindows().find(w => w.title === 'settings');
+  if (existing) { existing.focus(); return; }
   const sw = new BrowserWindow({
     width: 440, height: 480, resizable: false, title: 'settings',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), nodeIntegration: false, contextIsolation: true },
@@ -113,8 +125,11 @@ function openSettings() {
   sw.loadFile('settings.html');
 }
 
-function makeIcon(color) {
-  const c = { green: '#00cc44', blue: '#2080ff', gray: '#888888' }[color];
+function loadTrayIcon(name) {
+  const ico = path.join(__dirname, 'build', `icon-${name}.ico`);
+  if (fs.existsSync(ico)) return nativeImage.createFromPath(ico);
+  // fallback SVG
+  const c = { green: '#00cc44', blue: '#2080ff', gray: '#888888' }[name];
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><circle cx="8" cy="8" r="7" fill="${c}"/></svg>`;
   return nativeImage.createFromDataURL('data:image/svg+xml,' + encodeURIComponent(svg)).resize({ width: 16, height: 16 });
 }
@@ -124,14 +139,14 @@ function buildMenu() {
   const provMenu = Object.entries(providers).map(([key, p]) => ({
     label: (config.provider === key ? '✓ ' : '   ') + p.name,
     type: 'radio', checked: config.provider === key,
-    click: () => { config.provider = key; saveConfig(); updateIcon(); buildMenu(); },
+    click: () => { config.provider = key; saveConfig(); updateIcon(); },
   }));
 
   return Menu.buildFromTemplate([
     { label: '供应商', submenu: provMenu },
     { type: 'separator' },
-    { label: '启动 Relay', enabled: !running, click: async () => { await startRelayProcess(); updateIcon(); buildMenu(); } },
-    { label: '停止 Relay', enabled: running, click: async () => { await stopRelayProcess(); updateIcon(); buildMenu(); } },
+    { label: '启动 Relay', enabled: !running, click: async () => { await startRelayProcess(); updateIcon(); } },
+    { label: '停止 Relay', enabled: running, click: async () => { await stopRelayProcess(); updateIcon(); } },
     { label: '重启 Codex', click: () => restartCodex() },
     { type: 'separator' },
     { label: '设置...', click: () => openSettings() },
@@ -143,9 +158,9 @@ function buildMenu() {
 function updateIcon() {
   if (!tray) return;
   const mode = getCodexMode();
-  if (mode === 'go' && relayServer) tray.setImage(makeIcon('green'));
-  else if (mode === 'go') tray.setImage(makeIcon('gray'));
-  else tray.setImage(makeIcon('blue'));
+  if (mode === 'go' && relayServer) tray.setImage(loadTrayIcon('green'));
+  else if (mode === 'go') tray.setImage(loadTrayIcon('gray'));
+  else tray.setImage(loadTrayIcon('blue'));
   const prov = providers[config.provider];
   tray.setToolTip(`Codex Relay - ${prov ? prov.name : '?'} | ${mode === 'go' ? 'Go mode' : 'OpenAI'}`);
   tray.setContextMenu(buildMenu());
@@ -175,7 +190,7 @@ app.whenReady().then(async () => {
   app.setLoginItemSettings({ openAtLogin: !!config.autostart, path: process.execPath });
   ensureShortcut();
 
-  tray = new Tray(makeIcon('blue'));
+  tray = new Tray(loadTrayIcon('blue'));
   updateIcon();
   tray.setToolTip('Codex Relay');
 
