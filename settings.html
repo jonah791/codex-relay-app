@@ -149,12 +149,7 @@ function addMapRow(k, v, baseModel) {
   del.className = 'del-btn'; del.textContent = '\u00d7';
   del.addEventListener('click', () => { r.remove(); updateCount(); });
 
-  if (baseModel) {
-    sk.readOnly = true;
-    sk.style.opacity = '0.6';
-  } else {
-    r.append(sk, ar, sv);
-  }
+  if (baseModel) { sk.readOnly = true; sk.style.opacity = '0.6'; }
   r.append(sk, ar, sv);
   if (!baseModel) r.append(del);
   document.getElementById('maps').appendChild(r);
@@ -196,12 +191,15 @@ async function save() {
   showToast();
 }
 
+let toastTimer;
+
 function showToast(msg, isError) {
   const t = document.getElementById('toast');
   t.textContent = msg || 'Saved';
   t.style.background = isError ? '#e55' : '#00cc44';
+  if (toastTimer) clearTimeout(toastTimer);
   t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 3000);
+  toastTimer = setTimeout(() => { t.classList.remove('show'); toastTimer = null; }, 3000);
 }
 
 async function fetchModels() {
@@ -217,21 +215,22 @@ async function fetchModels() {
     } else {
       upstream = provs[pid]?.upstream || '';
     }
+    let hasError = false;
     if (upstream) {
       const m = await window.api.fetchUpstreamModels(upstream, cfg.api_key);
-      if (m.error) { showToast(m.error, true); btn.disabled = false; btn.textContent = 'Fetch Models'; return; }
-      if (m.length) upstreamModels = m;
+      if (!m || m.error) { showToast((m && m.error) || 'Failed to fetch upstream models', true); hasError = true; }
+      else { upstreamModels = m.length ? m : []; }
     }
 
     // Fetch Codex models from local cache
     const cm = await window.api.fetchCodexModels();
-    if (cm.error) showToast(cm.error, true);
-    else if (cm.length) {
+    if (cm && cm.error) showToast(cm.error, true);
+    else if (cm && cm.length) {
       codexModels = [...new Set([...codexModels, ...cm.map(m => m.id)])];
     }
-  } catch (e) { showToast('Network error: ' + e.message, true); }
 
-  showToast(`Loaded: ${codexModels.length} Codex + ${upstreamModels.length} upstream`);
+    if (!hasError) showToast(`Loaded: ${codexModels.length} Codex + ${upstreamModels.length} upstream`);
+  } catch (e) { showToast('Network error: ' + e.message, true); }
   renderMaps();
   btn.disabled = false; btn.textContent = 'Fetch Models';
 }
@@ -247,9 +246,10 @@ Promise.all([window.api.getConfig(), window.api.getProviders()]).then(([c, p]) =
     sel.appendChild(opt);
   });
   render();
-});
+}).catch(err => showToast('Failed to load settings: ' + (err && err.message || 'unknown'), true));
 
 document.getElementById('prov').addEventListener('change', () => {
+  if (!cfg || !provs) return;
   toggleCustom();
   renderMaps();
 });

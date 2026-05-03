@@ -12,32 +12,44 @@ let cfgDir, cfgPath;
 let codexCfg;
 
 function loadConfig() {
-  const def = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.default.json'), 'utf8'));
-  if (fs.existsSync(cfgPath)) {
-    config = { ...def, ...JSON.parse(fs.readFileSync(cfgPath, 'utf8')) };
-  } else {
-    config = { ...def };
-    saveConfig();
+  try {
+    const def = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.default.json'), 'utf8'));
+    if (fs.existsSync(cfgPath)) {
+      config = { ...def, ...JSON.parse(fs.readFileSync(cfgPath, 'utf8')) };
+    } else {
+      config = { ...def };
+      saveConfig();
+    }
+  } catch (e) {
+    console.warn('Config load failed, using defaults:', e.message);
+    config = { provider: 'opencode-go', api_key: '', custom_models: {}, model_overrides: {}, port: 4447, autostart: false, autostart_relay: true };
+    try { saveConfig(); } catch {}
   }
 }
 
 function saveConfig() {
-  fs.mkdirSync(cfgDir, { recursive: true });
-  fs.writeFileSync(cfgPath, JSON.stringify(config, null, 2));
+  try { fs.mkdirSync(cfgDir, { recursive: true }); } catch {}
+  try { fs.writeFileSync(cfgPath, JSON.stringify(config, null, 2)); } catch {}
 }
 
 function loadProviders() {
-  providers = JSON.parse(fs.readFileSync(path.join(__dirname, 'providers.json'), 'utf8'));
+  try {
+    providers = JSON.parse(fs.readFileSync(path.join(__dirname, 'providers.json'), 'utf8'));
+  } catch (e) {
+    console.warn('Providers load failed:', e.message);
+    providers = { 'opencode-go': { name: 'OpenCode Go', upstream: 'https://opencode.ai/zen/go/v1', models: { 'gpt-5.5': 'deepseek-v4-pro', 'gpt-5.4': 'deepseek-v4-flash' } } };
+  }
 }
 
 function getRelayProv() {
-  const pid = config.provider;
+  const pid = config.provider || 'opencode-go';
   const overrides = (config.model_overrides && config.model_overrides[pid]) || {};
   if (pid === 'custom') {
-    return { upstream: config.custom_upstream || '', models: { ... config.custom_models, ...overrides } };
+    return { upstream: config.custom_upstream || '', models: { ...config.custom_models, ...overrides } };
   }
   const base = providers[pid] || providers['opencode-go'];
-  return { upstream: base.upstream, models: { ...base.models, ...overrides } };
+  if (!base) return { upstream: '', models: {} };
+  return { upstream: base.upstream || '', models: { ...(base.models || {}), ...overrides } };
 }
 
 function getCodexMode() {
@@ -95,7 +107,7 @@ async function startRelayProcess() {
 }
 
 async function stopRelayProcess() {
-  if (relayServer) { relayServer.close(); relayServer = null; }
+  if (relayServer) { await new Promise(r => relayServer.close(() => r())); relayServer = null; }
 }
 
 function ensureShortcut() {
@@ -144,14 +156,14 @@ function buildMenu() {
   const provMenu = Object.entries(providers).map(([key, p]) => ({
     label: (config.provider === key ? '✓ ' : '   ') + p.name,
     type: 'radio', checked: config.provider === key,
-    click: () => { config.provider = key; saveConfig(); stopRelayProcess(); startRelayProcess(); process.nextTick(() => updateIcon()); },
+    click: async () => { config.provider = key; saveConfig(); await stopRelayProcess(); await startRelayProcess(); setTimeout(() => updateIcon(), 10); },
   }));
 
   return Menu.buildFromTemplate([
     { label: '供应商', submenu: provMenu },
     { type: 'separator' },
-    { label: '启动 Relay', enabled: !running, click: async () => { await startRelayProcess(); process.nextTick(() => updateIcon()); } },
-    { label: '停止 Relay', enabled: running, click: async () => { await stopRelayProcess(); process.nextTick(() => updateIcon()); } },
+    { label: '启动 Relay', enabled: !running, click: async () => { await startRelayProcess(); setTimeout(() => updateIcon(), 10); } },
+    { label: '停止 Relay', enabled: running, click: async () => { await stopRelayProcess(); setTimeout(() => updateIcon(), 10); } },
     { label: '重启 Codex', click: () => restartCodex() },
     { type: 'separator' },
     { label: '设置...', click: () => openSettings() },
@@ -213,7 +225,7 @@ function setupIPC() {
     if (!config.autostart_relay) await stopRelayProcess();
     else await startRelayProcess();
     app.setLoginItemSettings({ openAtLogin: config.autostart, path: process.execPath });
-    process.nextTick(() => updateIcon());
+    setTimeout(() => updateIcon(), 10);
   });
 }
 

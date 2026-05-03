@@ -1,11 +1,16 @@
 codex-relay-merged 功能已合并至此仓库，支持 GUI + CLI 双模式。
 
-### v1.0.3 新增
+### v1.0.4
 
-- **实时模型拉取**：设置页点击 **Fetch Models**，自动读取 Codex 本地缓存 + 上游供应商 `/v1/models`
-- **下拉选择**：模型映射行改为 `<select>` 下拉菜单，无需手填模型名
-- **双向数据**：Codex 侧读取 `~/.codex/models_cache.json`，上游侧直接请求 API
-- **映射覆盖**：`model_overrides` 按供应商隔离存储，切换供应商自动加载对应映射
+- 修复托盘气泡 API（`displayBalloon` 替代 `showBalloon`，Electron 35 兼容）
+- relay 启动失败时弹出气泡错误提示
+- 快捷方式创建失败添加日志警告
+- 设置页 fetch 失败时红色 toast 错误提示
+- 上游 API 错误返回 `{ error }` 对象，UI 正确识别
+- Codex cache 未找到时提示 "Open Codex first"
+- 模型映射行用 DOM API 替代 innerHTML（防 XSS）
+- 供应商切换自动重启 relay
+- 修复映射行重复渲染
 
 ### 双模式使用
 
