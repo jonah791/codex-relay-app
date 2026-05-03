@@ -1,20 +1,21 @@
-codex-relay-merged 功能已合并至 codex-relay-app。现在一个仓库支持双模式。
+codex-relay-merged 功能已合并至此仓库，支持 GUI + CLI 双模式。
 
-### 新增
-- CLI 模式（`node cli.js` 或 `.\start.ps1 -Cli`），无需 Electron
-- PowerShell 启动器（`start.ps1`）
+### v1.0.3 新增
 
-### 双模式对比
+- **实时模型拉取**：设置页点击 **Fetch Models**，自动读取 Codex 本地缓存 + 上游供应商 `/v1/models`
+- **下拉选择**：模型映射行改为 `<select>` 下拉菜单，无需手填模型名
+- **双向数据**：Codex 侧读取 `~/.codex/models_cache.json`，上游侧直接请求 API
+- **映射覆盖**：`model_overrides` 按供应商隔离存储，切换供应商自动加载对应映射
 
-| | GUI 模式 | CLI 模式 |
-|---|---|---|
-| 启动 | `npm start` / 双击 EXE | `node cli.js` |
-| 依赖 | Electron (~80MB) | Node.js 内置 |
-| 界面 | 系统托盘右键菜单 | 终端 Ctrl+C 停止 |
-| 适用 | 日常使用 | 轻量部署 / 后台服务 |
+### 双模式使用
 
-### 下载
-⬇️ **Codex-Relay-v1.0.3.exe**
+```powershell
+# GUI 模式
+npm start
+
+# CLI 模式（无需 Electron）
+node cli.js
+```
 
 ### 旧仓库
 [codex-relay-merged](https://github.com/jonah791/codex-relay-merged) 已归档。

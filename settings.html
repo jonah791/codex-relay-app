@@ -110,28 +110,18 @@ function renderMaps() {
   c.innerHTML = '';
   const pid = document.getElementById('prov').value;
   const overrides = (cfg.model_overrides && cfg.model_overrides[pid]) || {};
+  const baseModels = pid === 'custom' ? (cfg.custom_models || {}) : (provs[pid]?.models || {});
+  const merged = { ...baseModels, ...overrides };
+  const seen = new Set();
 
-  const entries = pid === 'custom'
-    ? Object.entries(cfg.custom_models || {})
-    : Object.entries(pid ? (provs[pid]?.models || {}) : {});
-
-  // Merge overrides
-  const merged = { ...entries.reduce((a, [k, v]) => { a[k] = v; return a; }, {}), ...overrides };
-
-  Object.entries(merged).forEach(([k, v]) => addMapRow(k, v, pid !== 'custom'));
-
-  if (!Object.keys(merged).length) addMapRow('', '', false);
-
-  // Add overrides not in base
-  Object.entries(overrides).forEach(([k, v]) => {
-    if (!document.querySelector(`#maps .model-row[data-key="${k}"]`)) {
-      if (!pid || !provs[pid]?.models?.[k]) {
-        const idx = document.querySelectorAll('#maps .model-row').length;
-        insertMapRowAt(idx, k, v);
-      }
-    }
+  Object.entries(merged).forEach(([k, v]) => {
+    if (seen.has(k)) return;
+    seen.add(k);
+    const isBase = baseModels.hasOwnProperty(k) && !overrides.hasOwnProperty(k);
+    addMapRow(k, v, isBase);
   });
 
+  if (!seen.size) addMapRow('', '', false);
   updateCount();
 }
 
@@ -144,10 +134,15 @@ function addMapRow(k, v, baseModel) {
   const sv = document.createElement('select'); sv.className = 'mv';
   sv.innerHTML = '<option value="">-</option>';
   (upstreamModels.length ? upstreamModels : [v]).forEach(m => {
-    sv.innerHTML += `<option value="${m}" ${m === v ? 'selected' : ''}>${m}</option>`;
+    const opt = document.createElement('option');
+    opt.value = m; opt.textContent = m;
+    if (m === v) opt.selected = true;
+    sv.appendChild(opt);
   });
   if (v && !upstreamModels.includes(v)) {
-    sv.innerHTML += `<option value="${v}" selected>${v}</option>`;
+    const opt2 = document.createElement('option');
+    opt2.value = v; opt2.textContent = v; opt2.selected = true;
+    sv.appendChild(opt2);
   }
 
   const del = document.createElement('button');
@@ -166,24 +161,6 @@ function addMapRow(k, v, baseModel) {
   updateCount();
 }
 
-function insertMapRowAt(idx, k, v) {
-  const r = document.createElement('div'); r.className = 'model-row';
-  if (k) r.dataset.key = k;
-  const sk = document.createElement('input'); sk.className = 'mk'; sk.value = k || ''; sk.placeholder = 'codex model';
-  const ar = document.createElement('span'); ar.className = 'arrow'; ar.textContent = '\u2192';
-  const sv = document.createElement('select'); sv.className = 'mv';
-  sv.innerHTML = `<option value="">-</option>` + (upstreamModels.length ? upstreamModels : [v]).map(m => `<option value="${m}">${m}</option>`).join('');
-  if (v && !upstreamModels.includes(v)) sv.innerHTML += `<option value="${v}" selected>${v}</option>`;
-  sv.value = v || '';
-  const del = document.createElement('button'); del.className = 'del-btn'; del.textContent = '\u00d7';
-  del.addEventListener('click', () => { r.remove(); updateCount(); });
-  r.append(sk, ar, sv, del);
-  const children = document.getElementById('maps').children;
-  if (idx < children.length) document.getElementById('maps').insertBefore(r, children[idx]);
-  else document.getElementById('maps').appendChild(r);
-  updateCount();
-}
-
 function updateCount() {
   const n = document.querySelectorAll('#maps .model-row').length;
   document.getElementById('modelCount').textContent = n + ' mapping' + (n !== 1 ? 's' : '');
@@ -196,9 +173,9 @@ async function save() {
 
   document.querySelectorAll('#maps .model-row').forEach(r => {
     const k = r.querySelector('.mk').value.trim();
-    const mv = r.querySelector('.mv');
-    if (mv) {
-      const v = typeof mv.value === 'string' ? mv.value : (mv.selectedOptions ? mv.selectedOptions[0]?.value : mv.options[mv.selectedIndex]?.value);
+    const sv = r.querySelector('.mv');
+    if (sv && sv.options && sv.selectedIndex >= 0) {
+      const v = sv.options[sv.selectedIndex].value;
       if (k && v) overrides[pid][k] = v;
     }
   });
@@ -219,11 +196,12 @@ async function save() {
   showToast();
 }
 
-function showToast(msg) {
+function showToast(msg, isError) {
   const t = document.getElementById('toast');
   t.textContent = msg || 'Saved';
+  t.style.background = isError ? '#e55' : '#00cc44';
   t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2000);
+  setTimeout(() => t.classList.remove('show'), 3000);
 }
 
 async function fetchModels() {
@@ -241,16 +219,17 @@ async function fetchModels() {
     }
     if (upstream) {
       const m = await window.api.fetchUpstreamModels(upstream, cfg.api_key);
+      if (m.error) { showToast(m.error, true); btn.disabled = false; btn.textContent = 'Fetch Models'; return; }
       if (m.length) upstreamModels = m;
     }
 
     // Fetch Codex models from local cache
     const cm = await window.api.fetchCodexModels();
-    if (cm.length) {
-      // Don't replace provider-built-in model keys, just add to suggestion pool
+    if (cm.error) showToast(cm.error, true);
+    else if (cm.length) {
       codexModels = [...new Set([...codexModels, ...cm.map(m => m.id)])];
     }
-  } catch (e) { console.error(e); }
+  } catch (e) { showToast('Network error: ' + e.message, true); }
 
   showToast(`Loaded: ${codexModels.length} Codex + ${upstreamModels.length} upstream`);
   renderMaps();

@@ -71,25 +71,26 @@ function restartCodex() {
   shell.openPath('shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App');
 }
 
+function balloon(title, content) {
+  if (!tray) return;
+  try { tray.displayBalloon({ title, content, icon: 'warning' }); } catch {}
+}
+
 async function startRelayProcess() {
   if (relayServer) return;
   const prov = getRelayProv();
   if (!config.api_key) {
-    tray && tray.showBalloon
-      ? tray.showBalloon({ title: 'Codex Relay', content: '请在设置中填写 API Key', iconType: 'warning' })
-      : console.warn('No API key configured');
+    balloon('Relay', '请在设置中填写 API Key');
     return;
   }
   if (!prov.upstream) {
-    tray && tray.showBalloon
-      ? tray.showBalloon({ title: 'Codex Relay', content: '请选择有效的供应商', iconType: 'warning' })
-      : console.warn('No valid provider upstream');
+    balloon('Relay', '请选择有效的供应商');
     return;
   }
   try {
     relayServer = await startRelay(config.port, prov.upstream, config.api_key, prov.models || {});
   } catch (e) {
-    console.error('Relay start failed:', e.message);
+    balloon('Relay Failed', e.message || '端口可能被占用');
   }
 }
 
@@ -103,7 +104,6 @@ function ensureShortcut() {
     const desktop = path.join(require('os').homedir(), 'Desktop');
     const shortcut = path.join(desktop, 'Codex Relay.lnk');
     if (fs.existsSync(shortcut)) { config.shortcut_created = true; saveConfig(); return; }
-    // Use shell.writeShortcutLink (Electron-native, no COM)
     const ok = shell.writeShortcutLink(shortcut, {
       target: process.execPath,
       workingDirectory: path.dirname(process.execPath),
@@ -114,7 +114,9 @@ function ensureShortcut() {
       config.shortcut_created = true;
       saveConfig();
     }
-  } catch {}
+  } catch (e) {
+    console.warn('Shortcut creation failed:', e.message);
+  }
 }
 
 function openSettings() {
@@ -142,7 +144,7 @@ function buildMenu() {
   const provMenu = Object.entries(providers).map(([key, p]) => ({
     label: (config.provider === key ? '✓ ' : '   ') + p.name,
     type: 'radio', checked: config.provider === key,
-    click: () => { config.provider = key; saveConfig(); updateIcon(); },
+    click: () => { config.provider = key; saveConfig(); stopRelayProcess(); startRelayProcess(); updateIcon(); },
   }));
 
   return Menu.buildFromTemplate([
@@ -176,25 +178,33 @@ function setupIPC() {
   ipcMain.handle('fetch-codex-models', () => {
     const p = path.join(require('os').homedir(), '.codex', 'models_cache.json');
     try {
+      if (!fs.existsSync(p)) return { error: 'Codex models_cache.json not found. Open Codex first.' };
       const data = JSON.parse(fs.readFileSync(p, 'utf8'));
       return (data.models || []).map(m => ({ id: m.slug, name: m.display_name || m.slug }));
-    } catch { return []; }
+    } catch (e) { return { error: 'Failed to read Codex models: ' + e.message }; }
   });
 
   ipcMain.handle('fetch-upstream-models', async (_, upstreamUrl, apiKey) => {
+    if (!upstreamUrl) return { error: 'No upstream URL configured' };
     const { request } = require(upstreamUrl.startsWith('https') ? 'https' : 'http');
     return new Promise((resolve) => {
-      const u = new URL(upstreamUrl.replace(/\/+$/, '') + '/models');
-      const opts = { hostname: u.hostname, path: u.pathname, method: 'GET', headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {} };
-      const r = request(opts, (res) => {
-        let d = '';
-        res.on('data', c => d += c);
-        res.on('end', () => {
-          try { resolve((JSON.parse(d).data || []).map(m => m.id)); } catch { resolve([]); }
+      try {
+        const u = new URL(upstreamUrl.replace(/\/+$/, '') + '/models');
+        const opts = { hostname: u.hostname, path: u.pathname, method: 'GET', headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {} };
+        const r = request(opts, (res) => {
+          let d = '';
+          res.on('data', c => d += c);
+          res.on('end', () => {
+            try {
+              const parsed = JSON.parse(d);
+              if (parsed.error) resolve({ error: parsed.error.message || 'API error' });
+              else resolve((parsed.data || []).map(m => m.id));
+            } catch { resolve({ error: 'Failed to parse upstream response' }); }
+          });
         });
-      });
-      r.on('error', () => resolve([]));
-      r.end();
+        r.on('error', (e) => resolve({ error: e.message }));
+        r.end();
+      } catch (e) { resolve({ error: 'Invalid upstream URL: ' + e.message }); }
     });
   });
 
