@@ -107,7 +107,11 @@ async function startRelayProcess() {
 }
 
 async function stopRelayProcess() {
-  if (relayServer) { await new Promise(r => relayServer.close(() => r())); relayServer = null; }
+  if (relayServer) {
+    try { relayServer.closeAllConnections(); } catch {}
+    await new Promise(r => relayServer.close(() => r()));
+    relayServer = null;
+  }
 }
 
 function ensureShortcut() {
@@ -168,7 +172,7 @@ function buildMenu() {
     { type: 'separator' },
     { label: '设置...', click: () => openSettings() },
     { type: 'separator' },
-    { label: '退出', click: () => { tray.destroy(); stopRelayProcess().catch(() => {}).finally(() => app.quit()); } },
+    { label: '退出', click: () => { tray.destroy(); stopRelayProcess().catch(() => {}); setTimeout(() => app.exit(0), 500); } },
   ]);
 }
 
@@ -251,6 +255,6 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {});
 
-app.on('before-quit', async () => {
-  await stopRelayProcess().catch(() => {});
+app.on('before-quit', () => {
+  if (relayServer) { try { relayServer.closeAllConnections(); } catch {}; relayServer.close(); }
 });
