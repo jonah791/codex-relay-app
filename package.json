@@ -1,6 +1,6 @@
 {
   "name": "codex-relay-app",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Codex CLI relay with system tray - model mapping + Responses API translation",
   "main": "main.js",
   "scripts": {

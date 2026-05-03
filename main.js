@@ -163,11 +163,12 @@ function buildMenu() {
     click: async () => { config.provider = key; saveConfig(); await stopRelayProcess(); await startRelayProcess(); },
   }));
 
+  const mode = getCodexMode();
   return Menu.buildFromTemplate([
     { label: '供应商', submenu: provMenu },
     { type: 'separator' },
-    { label: '启动 Relay', enabled: !running, click: async () => { await startRelayProcess(); updateIcon(); } },
-    { label: '停止 Relay', enabled: running, click: async () => { await stopRelayProcess(); updateIcon(); } },
+    { label: (mode === 'go' ? '✓ ' : '   ') + '使用 Relay', click: async () => { setCodexMode('go'); await startRelayProcess(); updateIcon(); restartCodex(); } },
+    { label: (mode === 'openai' ? '✓ ' : '   ') + '使用 OpenAI 默认', click: async () => { setCodexMode('openai'); await stopRelayProcess(); updateIcon(); restartCodex(); } },
     { label: '重启 Codex', click: () => restartCodex() },
     { type: 'separator' },
     { label: '设置...', click: () => openSettings() },
