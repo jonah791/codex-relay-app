@@ -1,0 +1,37 @@
+{
+  "opencode-go": {
+    "name": "OpenCode Go",
+    "upstream": "https://opencode.ai/zen/go/v1",
+    "models": {
+      "gpt-5.5": "deepseek-v4-pro",
+      "gpt-5.4": "deepseek-v4-flash"
+    }
+  },
+  "deepseek": {
+    "name": "DeepSeek",
+    "upstream": "https://api.deepseek.com/v1",
+    "models": {
+      "gpt-5.5": "deepseek-chat"
+    }
+  },
+  "kimi": {
+    "name": "Kimi",
+    "upstream": "https://api.moonshot.cn/v1",
+    "models": {
+      "gpt-5.5": "kimi-k2.6",
+      "gpt-5.4": "kimi-k2.5"
+    }
+  },
+  "openrouter": {
+    "name": "OpenRouter",
+    "upstream": "https://openrouter.ai/api/v1",
+    "models": {
+      "gpt-5.5": "openai/gpt-4o"
+    }
+  },
+  "custom": {
+    "name": "自定义",
+    "upstream": "",
+    "models": {}
+  }
+}

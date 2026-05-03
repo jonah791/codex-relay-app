@@ -1,0 +1,9 @@
+{
+  "provider": "opencode-go",
+  "api_key": "",
+  "custom_upstream": "",
+  "custom_models": {},
+  "port": 4447,
+  "autostart": false,
+  "autostart_relay": true
+}

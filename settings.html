@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>Settings</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font:13px/1.6 'Segoe UI',sans-serif;background:#1e1e1e;color:#ccc;padding:20px}
+h2{font-size:16px;margin-bottom:16px;color:#fff}
+label{display:block;font-size:12px;color:#999;margin:12px 0 4px}
+input,select{width:100%;padding:7px 10px;background:#2d2d2d;border:1px solid #444;border-radius:4px;color:#ddd;font-size:13px}
+select{appearance:none;cursor:pointer}
+input:focus,select:focus{outline:none;border-color:#2080ff}
+.custom-block{margin-top:12px;padding:12px;background:#252525;border-radius:4px;display:none}
+.custom-block.show{display:block}
+.model-row{display:flex;gap:6px;margin-bottom:6px;align-items:center}
+.model-row input{flex:1}
+.model-row .arrow{color:#888;flex:0 0 20px;text-align:center}
+.row{display:flex;align-items:center;gap:8px;margin-top:12px}
+.row label{margin:0}
+.check{width:auto!important}
+.btns{display:flex;gap:8px;margin-top:20px;justify-content:flex-end}
+button{padding:8px 20px;border:none;border-radius:4px;cursor:pointer;font-size:13px}
+.btn-save{background:#2080ff;color:#fff}
+.btn-cancel{background:#3a3a3a;color:#ccc}
+button:hover{opacity:.9}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#00cc44;color:#fff;padding:8px 20px;border-radius:4px;font-size:13px;opacity:0;transition:opacity .3s}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+<h2>⚙ Codex Relay Settings</h2>
+
+<label>Supplier</label>
+<select id="prov"></select>
+
+<label>API Key</label>
+<input id="key" type="password" placeholder="sk-...">
+
+<div id="custom" class="custom-block">
+  <label>Upstream URL</label>
+  <input id="upstream" placeholder="https://api.example.com/v1">
+  <label style="margin-top:12px">Model Mapping</label>
+  <div id="maps"></div>
+  <button id="addMap" class="btn-cancel" style="width:100%;margin-top:6px">+ Add Mapping</button>
+</div>
+
+<label>Port</label>
+<input id="port" type="number" placeholder="4447">
+
+<div class="row">
+  <input id="autostart" type="checkbox" class="check"><label for="autostart">Start with Windows</label>
+</div>
+<div class="row">
+  <input id="autorelay" type="checkbox" class="check"><label for="autorelay">Auto-start Relay</label>
+</div>
+
+<div class="btns">
+  <button id="cancel" class="btn-cancel">Cancel</button>
+  <button id="save" class="btn-save">Save</button>
+</div>
+
+<div id="toast" class="toast">Saved</div>
+
+<script>
+let cfg, provs;
+
+function render() {
+  document.getElementById('prov').value = cfg.provider;
+  document.getElementById('key').value = cfg.api_key || '';
+  document.getElementById('port').value = cfg.port || 4447;
+  document.getElementById('autostart').checked = !!cfg.autostart;
+  document.getElementById('autorelay').checked = !!cfg.autostart_relay;
+  toggleCustom();
+}
+
+function toggleCustom() {
+  const isC = document.getElementById('prov').value === 'custom';
+  document.getElementById('custom').classList.toggle('show', isC);
+  if (isC) {
+    document.getElementById('upstream').value = cfg.custom_upstream || '';
+    renderMaps();
+  }
+}
+
+function renderMaps() {
+  const c = document.getElementById('maps');
+  c.innerHTML = '';
+  const entries = Object.entries(cfg.custom_models || {});
+  entries.forEach(([k, v], i) => {
+    const r = document.createElement('div'); r.className = 'model-row';
+    r.innerHTML = `<input class="mk" value="${k}" placeholder="gpt-5.5"><span class="arrow">→</span><input class="mv" value="${v}" placeholder="deepseek-v4-pro">`;
+    c.appendChild(r);
+  });
+  if (!entries.length) {
+    document.getElementById('maps').innerHTML = '<div class="model-row"><input class="mk" placeholder="gpt-5.5"><span class="arrow">→</span><input class="mv" placeholder="deepseek-v4-pro"></div>';
+  }
+}
+
+async function save() {
+  const cp = document.getElementById('prov').value;
+  const n = {
+    provider: cp,
+    api_key: document.getElementById('key').value,
+    port: parseInt(document.getElementById('port').value) || 4447,
+    autostart: document.getElementById('autostart').checked,
+    autostart_relay: document.getElementById('autorelay').checked,
+  };
+  if (cp === 'custom') {
+    n.custom_upstream = document.getElementById('upstream').value;
+    n.custom_models = {};
+    document.querySelectorAll('#maps .model-row').forEach(r => {
+      const k = r.querySelector('.mk').value;
+      const vArr = r.querySelectorAll('.mv');
+      vArr.forEach(mv => {
+        if (k && mv.value) n.custom_models[k] = mv.value;
+      });
+    });
+  }
+  await window.api.saveConfig(n);
+  showToast();
+}
+
+function showToast() {
+  const t = document.getElementById('toast');
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+// init
+window.api.getConfig().then(c => { cfg = c; });
+window.api.getProviders().then(p => {
+  provs = p;
+  const sel = document.getElementById('prov');
+  sel.innerHTML = Object.entries(p).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('');
+  render();
+});
+
+document.getElementById('prov').addEventListener('change', toggleCustom);
+document.getElementById('save').addEventListener('click', save);
+document.getElementById('cancel').addEventListener('click', () => window.close());
+document.getElementById('addMap').addEventListener('click', () => {
+  const d = document.createElement('div'); d.className = 'model-row';
+  d.innerHTML = '<input class="mk" placeholder="codex-model"><span class="arrow">→</span><input class="mv" placeholder="upstream-model">';
+  document.getElementById('maps').appendChild(d);
+});
+</script>
+</body>
+</html>

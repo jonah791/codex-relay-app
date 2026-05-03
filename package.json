@@ -1,0 +1,33 @@
+{
+  "name": "codex-relay-app",
+  "version": "1.0.0",
+  "description": "Codex CLI relay with system tray - model mapping + Responses API translation",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "build": {
+    "appId": "com.codexrelay.app",
+    "productName": "Codex Relay",
+    "files": [
+      "main.js", "relay.js", "preload.js", "settings.html",
+      "providers.json", "config.default.json", "build/**"
+    ],
+    "win": { "target": "nsis", "icon": "build/icon.ico" },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Codex Relay",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
+    }
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^26.0.0"
+  }
+}
