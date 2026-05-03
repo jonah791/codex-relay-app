@@ -160,19 +160,19 @@ function buildMenu() {
   const provMenu = Object.entries(providers).map(([key, p]) => ({
     label: (config.provider === key ? '✓ ' : '   ') + p.name,
     type: 'radio', checked: config.provider === key,
-    click: async () => { config.provider = key; saveConfig(); await stopRelayProcess(); await startRelayProcess(); setTimeout(() => updateIcon(), 10); },
+    click: async () => { config.provider = key; saveConfig(); await stopRelayProcess(); await startRelayProcess(); },
   }));
 
   return Menu.buildFromTemplate([
     { label: '供应商', submenu: provMenu },
     { type: 'separator' },
-    { label: '启动 Relay', enabled: !running, click: async () => { await startRelayProcess(); setTimeout(() => updateIcon(), 10); } },
-    { label: '停止 Relay', enabled: running, click: async () => { await stopRelayProcess(); setTimeout(() => updateIcon(), 10); } },
+    { label: '启动 Relay', enabled: !running, click: async () => { await startRelayProcess(); updateIcon(); } },
+    { label: '停止 Relay', enabled: running, click: async () => { await stopRelayProcess(); updateIcon(); } },
     { label: '重启 Codex', click: () => restartCodex() },
     { type: 'separator' },
     { label: '设置...', click: () => openSettings() },
     { type: 'separator' },
-    { label: '退出', click: () => { tray.destroy(); stopRelayProcess().catch(() => {}); setTimeout(() => app.exit(0), 500); } },
+    { label: '退出', click: () => { tray.destroy(); stopRelayProcess().catch(() => {}); setImmediate(() => app.quit()); } },
   ]);
 }
 
@@ -184,7 +184,6 @@ function updateIcon() {
   else tray.setImage(loadTrayIcon('blue'));
   const prov = providers[config.provider];
   tray.setToolTip(`Codex Relay - ${prov ? prov.name : '?'} | ${mode === 'go' ? 'Go mode' : 'OpenAI'}`);
-  tray.setContextMenu(buildMenu());
 }
 
 function setupIPC() {
@@ -229,7 +228,6 @@ function setupIPC() {
     if (!config.autostart_relay) await stopRelayProcess();
     else await startRelayProcess();
     app.setLoginItemSettings({ openAtLogin: config.autostart, path: process.execPath });
-    setTimeout(() => updateIcon(), 10);
   });
 }
 
@@ -246,6 +244,7 @@ app.whenReady().then(async () => {
   ensureShortcut();
 
   tray = new Tray(loadTrayIcon('blue'));
+  tray.on('right-click', () => { tray.setContextMenu(buildMenu()); });
   updateIcon();
   tray.setToolTip('Codex Relay');
 
