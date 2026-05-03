@@ -3,6 +3,7 @@
   "api_key": "",
   "custom_upstream": "",
   "custom_models": {},
+  "model_overrides": {},
   "port": 4447,
   "autostart": false,
   "autostart_relay": true

@@ -11,38 +11,58 @@ label{display:block;font-size:12px;color:#999;margin:12px 0 4px}
 input,select{width:100%;padding:7px 10px;background:#2d2d2d;border:1px solid #444;border-radius:4px;color:#ddd;font-size:13px}
 select{appearance:none;cursor:pointer}
 input:focus,select:focus{outline:none;border-color:#2080ff}
+.model-section{margin-top:12px;padding:12px;background:#252525;border-radius:4px}
+.model-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.model-header span{font-size:11px;color:#888}
+.btn-fetch{background:#2d2d2d;color:#2080ff;border:1px solid #2080ff;padding:4px 12px;border-radius:3px;cursor:pointer;font-size:12px}
+.btn-fetch:hover{background:#2080ff;color:#fff}
+.btn-fetch:disabled{opacity:.5;cursor:default}
+.model-row{display:flex;gap:8px;margin-bottom:6px;align-items:center}
+.model-row select{flex:1}
+.model-row .arrow{color:#888;flex:0 0 16px;text-align:center;font-size:14px}
+.btn-row{display:flex;gap:8px;margin-top:8px}
 .custom-block{margin-top:12px;padding:12px;background:#252525;border-radius:4px;display:none}
 .custom-block.show{display:block}
-.model-row{display:flex;gap:6px;margin-bottom:6px;align-items:center}
-.model-row input{flex:1}
-.model-row .arrow{color:#888;flex:0 0 20px;text-align:center}
 .row{display:flex;align-items:center;gap:8px;margin-top:12px}
-.row label{margin:0}
-.check{width:auto!important}
+.row label{margin:0;flex:1}
+.check{width:auto!important;flex:0 0 auto}
 .btns{display:flex;gap:8px;margin-top:20px;justify-content:flex-end}
-button{padding:8px 20px;border:none;border-radius:4px;cursor:pointer;font-size:13px}
+button{padding:7px 16px;border:none;border-radius:4px;cursor:pointer;font-size:13px}
 .btn-save{background:#2080ff;color:#fff}
 .btn-cancel{background:#3a3a3a;color:#ccc}
+.btn-add{background:transparent;color:#2080ff;border:1px dashed #2080ff;width:100%}
 button:hover{opacity:.9}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#00cc44;color:#fff;padding:8px 20px;border-radius:4px;font-size:13px;opacity:0;transition:opacity .3s}
 .toast.show{opacity:1}
+.del-btn{background:transparent;border:none;color:#e55;cursor:pointer;font-size:16px;padding:0 4px}
+.del-btn:hover{color:#f33}
 </style>
 </head>
 <body>
-<h2>⚙ Codex Relay Settings</h2>
+<h2>Codex Relay Settings</h2>
 
 <label>Supplier</label>
 <select id="prov"></select>
 
 <label>API Key</label>
-<input id="key" type="password" placeholder="sk-...">
+<div style="display:flex;gap:4px">
+  <input id="key" type="password" placeholder="sk-..." style="flex:1">
+  <button id="showKey" class="btn-cancel" style="flex:0 0 36px;padding:7px 8px">👁</button>
+</div>
+
+<div class="model-section">
+  <div class="model-header">
+    <strong style="color:#ccc">Model Mapping</strong>
+    <span id="modelCount">-</span>
+    <button id="fetchBtn" class="btn-fetch">Fetch Models</button>
+  </div>
+  <div id="maps"></div>
+  <button id="addMap" class="btn-add">+ Add Mapping</button>
+</div>
 
 <div id="custom" class="custom-block">
   <label>Upstream URL</label>
   <input id="upstream" placeholder="https://api.example.com/v1">
-  <label style="margin-top:12px">Model Mapping</label>
-  <div id="maps"></div>
-  <button id="addMap" class="btn-cancel" style="width:100%;margin-top:6px">+ Add Mapping</button>
 </div>
 
 <label>Port</label>
@@ -64,6 +84,8 @@ button:hover{opacity:.9}
 
 <script>
 let cfg, provs;
+let upstreamModels = [];
+let codexModels = ['gpt-5.5', 'gpt-5.4', 'gpt-4.1', 'gpt-4o', 'gpt-4o-mini'];
 
 function render() {
   document.getElementById('prov').value = cfg.provider;
@@ -72,6 +94,7 @@ function render() {
   document.getElementById('autostart').checked = !!cfg.autostart;
   document.getElementById('autorelay').checked = !!cfg.autostart_relay;
   toggleCustom();
+  renderMaps();
 }
 
 function toggleCustom() {
@@ -79,63 +102,162 @@ function toggleCustom() {
   document.getElementById('custom').classList.toggle('show', isC);
   if (isC) {
     document.getElementById('upstream').value = cfg.custom_upstream || '';
-    renderMaps();
   }
 }
 
 function renderMaps() {
   const c = document.getElementById('maps');
   c.innerHTML = '';
-  const entries = Object.entries(cfg.custom_models || {});
-  entries.forEach(([k, v]) => {
-    const r = document.createElement('div'); r.className = 'model-row';
-    const ik = document.createElement('input'); ik.className = 'mk'; ik.value = k; ik.placeholder = 'gpt-5.5';
-    const ar = document.createElement('span'); ar.className = 'arrow'; ar.textContent = '\u2192';
-    const iv = document.createElement('input'); iv.className = 'mv'; iv.value = v; iv.placeholder = 'deepseek-v4-pro';
-    r.append(ik, ar, iv);
-    c.appendChild(r);
+  const pid = document.getElementById('prov').value;
+  const overrides = (cfg.model_overrides && cfg.model_overrides[pid]) || {};
+
+  const entries = pid === 'custom'
+    ? Object.entries(cfg.custom_models || {})
+    : Object.entries(pid ? (provs[pid]?.models || {}) : {});
+
+  // Merge overrides
+  const merged = { ...entries.reduce((a, [k, v]) => { a[k] = v; return a; }, {}), ...overrides };
+
+  Object.entries(merged).forEach(([k, v]) => addMapRow(k, v, pid !== 'custom'));
+
+  if (!Object.keys(merged).length) addMapRow('', '', false);
+
+  // Add overrides not in base
+  Object.entries(overrides).forEach(([k, v]) => {
+    if (!document.querySelector(`#maps .model-row[data-key="${k}"]`)) {
+      if (!pid || !provs[pid]?.models?.[k]) {
+        const idx = document.querySelectorAll('#maps .model-row').length;
+        insertMapRowAt(idx, k, v);
+      }
+    }
   });
-  if (!entries.length) addMapRow();
+
+  updateCount();
 }
 
-function addMapRow() {
+function addMapRow(k, v, baseModel) {
   const r = document.createElement('div'); r.className = 'model-row';
-  const ik = document.createElement('input'); ik.className = 'mk'; ik.placeholder = 'gpt-5.5';
+  if (k) r.dataset.key = k;
+
+  const sk = document.createElement('input'); sk.className = 'mk'; sk.value = k || ''; sk.placeholder = 'codex model';
   const ar = document.createElement('span'); ar.className = 'arrow'; ar.textContent = '\u2192';
-  const iv = document.createElement('input'); iv.className = 'mv'; iv.placeholder = 'deepseek-v4-pro';
-  r.append(ik, ar, iv);
+  const sv = document.createElement('select'); sv.className = 'mv';
+  sv.innerHTML = '<option value="">-</option>';
+  (upstreamModels.length ? upstreamModels : [v]).forEach(m => {
+    sv.innerHTML += `<option value="${m}" ${m === v ? 'selected' : ''}>${m}</option>`;
+  });
+  if (v && !upstreamModels.includes(v)) {
+    sv.innerHTML += `<option value="${v}" selected>${v}</option>`;
+  }
+
+  const del = document.createElement('button');
+  del.className = 'del-btn'; del.textContent = '\u00d7';
+  del.addEventListener('click', () => { r.remove(); updateCount(); });
+
+  if (baseModel) {
+    sk.readOnly = true;
+    sk.style.opacity = '0.6';
+  } else {
+    r.append(sk, ar, sv);
+  }
+  r.append(sk, ar, sv);
+  if (!baseModel) r.append(del);
   document.getElementById('maps').appendChild(r);
+  updateCount();
+}
+
+function insertMapRowAt(idx, k, v) {
+  const r = document.createElement('div'); r.className = 'model-row';
+  if (k) r.dataset.key = k;
+  const sk = document.createElement('input'); sk.className = 'mk'; sk.value = k || ''; sk.placeholder = 'codex model';
+  const ar = document.createElement('span'); ar.className = 'arrow'; ar.textContent = '\u2192';
+  const sv = document.createElement('select'); sv.className = 'mv';
+  sv.innerHTML = `<option value="">-</option>` + (upstreamModels.length ? upstreamModels : [v]).map(m => `<option value="${m}">${m}</option>`).join('');
+  if (v && !upstreamModels.includes(v)) sv.innerHTML += `<option value="${v}" selected>${v}</option>`;
+  sv.value = v || '';
+  const del = document.createElement('button'); del.className = 'del-btn'; del.textContent = '\u00d7';
+  del.addEventListener('click', () => { r.remove(); updateCount(); });
+  r.append(sk, ar, sv, del);
+  const children = document.getElementById('maps').children;
+  if (idx < children.length) document.getElementById('maps').insertBefore(r, children[idx]);
+  else document.getElementById('maps').appendChild(r);
+  updateCount();
+}
+
+function updateCount() {
+  const n = document.querySelectorAll('#maps .model-row').length;
+  document.getElementById('modelCount').textContent = n + ' mapping' + (n !== 1 ? 's' : '');
 }
 
 async function save() {
-  const cp = document.getElementById('prov').value;
+  const pid = document.getElementById('prov').value;
+  const overrides = { ...(cfg.model_overrides || {}) };
+  overrides[pid] = {};
+
+  document.querySelectorAll('#maps .model-row').forEach(r => {
+    const k = r.querySelector('.mk').value.trim();
+    const mv = r.querySelector('.mv');
+    if (mv) {
+      const v = typeof mv.value === 'string' ? mv.value : (mv.selectedOptions ? mv.selectedOptions[0]?.value : mv.options[mv.selectedIndex]?.value);
+      if (k && v) overrides[pid][k] = v;
+    }
+  });
+
   const n = {
-    provider: cp,
+    provider: pid,
     api_key: document.getElementById('key').value,
     port: parseInt(document.getElementById('port').value) || 4447,
     autostart: document.getElementById('autostart').checked,
     autostart_relay: document.getElementById('autorelay').checked,
+    model_overrides: overrides,
   };
-  if (cp === 'custom') {
+  if (pid === 'custom') {
     n.custom_upstream = document.getElementById('upstream').value;
-    n.custom_models = {};
-    document.querySelectorAll('#maps .model-row').forEach(r => {
-      const k = r.querySelector('.mk').value;
-      const mv = r.querySelector('.mv').value;
-      if (k && mv) n.custom_models[k] = mv;
-    });
+    n.custom_models = overrides[pid] || {};
   }
   await window.api.saveConfig(n);
   showToast();
 }
 
-function showToast() {
+function showToast(msg) {
   const t = document.getElementById('toast');
+  t.textContent = msg || 'Saved';
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 2000);
 }
 
-// init
+async function fetchModels() {
+  const btn = document.getElementById('fetchBtn');
+  btn.disabled = true; btn.textContent = 'Fetching...';
+
+  try {
+    // Fetch upstream models
+    const pid = document.getElementById('prov').value;
+    let upstream;
+    if (pid === 'custom') {
+      upstream = document.getElementById('upstream').value;
+    } else {
+      upstream = provs[pid]?.upstream || '';
+    }
+    if (upstream) {
+      const m = await window.api.fetchUpstreamModels(upstream, cfg.api_key);
+      if (m.length) upstreamModels = m;
+    }
+
+    // Fetch Codex models from local cache
+    const cm = await window.api.fetchCodexModels();
+    if (cm.length) {
+      // Don't replace provider-built-in model keys, just add to suggestion pool
+      codexModels = [...new Set([...codexModels, ...cm.map(m => m.id)])];
+    }
+  } catch (e) { console.error(e); }
+
+  showToast(`Loaded: ${codexModels.length} Codex + ${upstreamModels.length} upstream`);
+  renderMaps();
+  btn.disabled = false; btn.textContent = 'Fetch Models';
+}
+
+// Init
 Promise.all([window.api.getConfig(), window.api.getProviders()]).then(([c, p]) => {
   cfg = c; provs = p;
   const sel = document.getElementById('prov');
@@ -148,10 +270,18 @@ Promise.all([window.api.getConfig(), window.api.getProviders()]).then(([c, p]) =
   render();
 });
 
-document.getElementById('prov').addEventListener('change', toggleCustom);
+document.getElementById('prov').addEventListener('change', () => {
+  toggleCustom();
+  renderMaps();
+});
+document.getElementById('fetchBtn').addEventListener('click', fetchModels);
+document.getElementById('showKey').addEventListener('click', () => {
+  const ik = document.getElementById('key');
+  ik.type = ik.type === 'password' ? 'text' : 'password';
+});
 document.getElementById('save').addEventListener('click', save);
 document.getElementById('cancel').addEventListener('click', () => window.close());
-document.getElementById('addMap').addEventListener('click', addMapRow);
+document.getElementById('addMap').addEventListener('click', () => addMapRow('', '', false));
 </script>
 </body>
 </html>

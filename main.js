@@ -31,10 +31,13 @@ function loadProviders() {
 }
 
 function getRelayProv() {
-  if (config.provider === 'custom') {
-    return { upstream: config.custom_upstream || '', models: config.custom_models || {} };
+  const pid = config.provider;
+  const overrides = (config.model_overrides && config.model_overrides[pid]) || {};
+  if (pid === 'custom') {
+    return { upstream: config.custom_upstream || '', models: { ... config.custom_models, ...overrides } };
   }
-  return providers[config.provider] || providers['opencode-go'];
+  const base = providers[pid] || providers['opencode-go'];
+  return { upstream: base.upstream, models: { ...base.models, ...overrides } };
 }
 
 function getCodexMode() {
@@ -169,6 +172,32 @@ function updateIcon() {
 function setupIPC() {
   ipcMain.handle('get-config', () => config);
   ipcMain.handle('get-providers', () => providers);
+
+  ipcMain.handle('fetch-codex-models', () => {
+    const p = path.join(require('os').homedir(), '.codex', 'models_cache.json');
+    try {
+      const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+      return (data.models || []).map(m => ({ id: m.slug, name: m.display_name || m.slug }));
+    } catch { return []; }
+  });
+
+  ipcMain.handle('fetch-upstream-models', async (_, upstreamUrl, apiKey) => {
+    const { request } = require(upstreamUrl.startsWith('https') ? 'https' : 'http');
+    return new Promise((resolve) => {
+      const u = new URL(upstreamUrl.replace(/\/+$/, '') + '/models');
+      const opts = { hostname: u.hostname, path: u.pathname, method: 'GET', headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {} };
+      const r = request(opts, (res) => {
+        let d = '';
+        res.on('data', c => d += c);
+        res.on('end', () => {
+          try { resolve((JSON.parse(d).data || []).map(m => m.id)); } catch { resolve([]); }
+        });
+      });
+      r.on('error', () => resolve([]));
+      r.end();
+    });
+  });
+
   ipcMain.handle('save-config', async (_, newCfg) => {
     config = { ...config, ...newCfg }; saveConfig();
     if (!config.autostart_relay) await stopRelayProcess();
