@@ -8,6 +8,7 @@
     "pack": "electron-builder --dir",
     "dist": "electron-builder"
   },
+  "author": "jonah791",
   "build": {
     "appId": "com.codexrelay.app",
     "productName": "Codex Relay",
@@ -15,16 +16,8 @@
       "main.js", "relay.js", "preload.js", "settings.html",
       "providers.json", "config.default.json", "build/**"
     ],
-    "win": { "target": "nsis", "icon": "build/icon.ico" },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "shortcutName": "Codex Relay",
-      "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico"
-    }
+    "win": { "target": "portable", "icon": "build/icon.ico" },
+    "portable": { "artifactName": "Codex-Relay-v${version}.exe" }
   },
   "devDependencies": {
     "electron": "^35.0.0",

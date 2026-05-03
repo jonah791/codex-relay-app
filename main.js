@@ -192,7 +192,7 @@ app.whenReady().then(async () => {
   updateIcon();
   tray.setToolTip('Codex Relay');
 
-  if (!isPacked) ensureShortcut();
+  if (!isPacked || !config.shortcut_created) ensureShortcut();
 
   if (config.autostart_relay && config.api_key) await startRelayProcess();
   updateIcon();
