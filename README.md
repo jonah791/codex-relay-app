@@ -1,6 +1,8 @@
 # Codex Relay App
 
-系统托盘应用，一键切换 Codex CLI 供应商。将 OpenAI Responses API 翻译为 Chat Completions API，支持模型名映射。
+一键切换 Codex CLI 供应商。将 OpenAI **Responses API** 翻译为 **Chat Completions API**，支持模型名映射。
+
+> 🔄 原 [`codex-relay-merged`](https://github.com/jonah791/codex-relay-merged) 已**归档**，全部功能合并至此仓库。
 
 ## 安装
 
@@ -12,12 +14,27 @@ npm install
 
 ## 使用
 
+### GUI 模式（推荐）
+
 ```powershell
 npm start
-# 或双击 start.cmd
+# 或双击 start.cmd / .\start.ps1
 ```
 
-任务栏出现图标后：
+任务栏出现图标后，右键操控一切。
+
+### CLI 模式（无需 Electron）
+
+```powershell
+# 设置 API Key
+echo $env:CODEX_RELAY_API_KEY = "sk-..." > .env.ps1
+
+# 启动
+node cli.js
+# 或 .\start.ps1 -Cli
+```
+
+纯命令行运行，无 GUI 依赖。
 - **右键** → 选择供应商 → 输入 API Key
 - **右键** → 启动/停止 Relay
 - **右键** → 设置 → 自定义模型映射
