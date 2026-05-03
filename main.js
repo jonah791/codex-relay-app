@@ -144,14 +144,14 @@ function buildMenu() {
   const provMenu = Object.entries(providers).map(([key, p]) => ({
     label: (config.provider === key ? '✓ ' : '   ') + p.name,
     type: 'radio', checked: config.provider === key,
-    click: () => { config.provider = key; saveConfig(); stopRelayProcess(); startRelayProcess(); updateIcon(); },
+    click: () => { config.provider = key; saveConfig(); stopRelayProcess(); startRelayProcess(); process.nextTick(() => updateIcon()); },
   }));
 
   return Menu.buildFromTemplate([
     { label: '供应商', submenu: provMenu },
     { type: 'separator' },
-    { label: '启动 Relay', enabled: !running, click: async () => { await startRelayProcess(); updateIcon(); } },
-    { label: '停止 Relay', enabled: running, click: async () => { await stopRelayProcess(); updateIcon(); } },
+    { label: '启动 Relay', enabled: !running, click: async () => { await startRelayProcess(); process.nextTick(() => updateIcon()); } },
+    { label: '停止 Relay', enabled: running, click: async () => { await stopRelayProcess(); process.nextTick(() => updateIcon()); } },
     { label: '重启 Codex', click: () => restartCodex() },
     { type: 'separator' },
     { label: '设置...', click: () => openSettings() },
@@ -213,7 +213,7 @@ function setupIPC() {
     if (!config.autostart_relay) await stopRelayProcess();
     else await startRelayProcess();
     app.setLoginItemSettings({ openAtLogin: config.autostart, path: process.execPath });
-    updateIcon();
+    process.nextTick(() => updateIcon());
   });
 }
 
