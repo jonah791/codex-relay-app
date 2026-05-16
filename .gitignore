@@ -2,4 +2,16 @@ node_modules/
 dist/
 *.exe
 config.json
+.env
 .env.ps1
+.env.local
+*.log
+logs/
+tmp/
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
